@@ -1,5 +1,5 @@
 [package]
-name = "rust"
+name = "thesis-rust-crud"
 version = "0.1.0"
 edition = "2021"
 
