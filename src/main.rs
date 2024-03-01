@@ -13,12 +13,15 @@ async fn create_user(user: web::Json<User>) -> impl Responder {
 }
 
 async fn read_users() -> impl Responder {
-    HttpResponse::Ok().json(vec![]) // Dummy response
+    HttpResponse::Ok().json(vec![User {
+        name: "John".to_string(),
+        country_code: "US".to_string(),
+        points_balance: 100,
+    }])
 }
 
 async fn read_user(user_name: web::Path<String>) -> impl Responder {
     HttpResponse::Ok().json(User {
-        // Dummy response
         name: user_name.into_inner(),
         country_code: "US".to_string(),
         points_balance: 100,
@@ -35,6 +38,7 @@ async fn delete_user(user_name: web::Path<String>) -> impl Responder {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    println!("Server running at http://localhost:8080/");
     HttpServer::new(|| {
         App::new()
             .route("/", web::get().to(read_users))
