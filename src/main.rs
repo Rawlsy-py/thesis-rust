@@ -1,54 +1,71 @@
+// main.rs
+
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
+use diesel::{prelude::*, PgConnection};
+use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
+use std::env;
 
-#[derive(Serialize, Deserialize)]
-struct User {
-    name: String,
+#[derive(Debug, Deserialize, Serialize, Queryable)]
+struct MyModel {
+    id: i32,
     country_code: String,
-    points_balance: i32,
+    balance: f64,
 }
 
-async fn create_user(user: web::Json<User>) -> impl Responder {
-    HttpResponse::Ok().json(user.into_inner())
+#[derive(Debug, Deserialize, Serialize, Insertable)]
+#[table_name = "my_table"]
+struct NewMyModel {
+    country_code: String,
+    balance: f64,
 }
 
-async fn read_users() -> impl Responder {
-    HttpResponse::Ok().json(vec![User {
-        name: "John".to_string(),
-        country_code: "US".to_string(),
-        points_balance: 100,
-    }])
-}
-
-async fn read_user(user_name: web::Path<String>) -> impl Responder {
-    HttpResponse::Ok().json(User {
-        name: user_name.into_inner(),
-        country_code: "US".to_string(),
-        points_balance: 100,
-    })
-}
-
-async fn update_user(_user_name: web::Path<String>, user: web::Json<User>) -> impl Responder {
-    HttpResponse::Ok().json(user.into_inner()) // Dummy response
-}
-
-async fn delete_user(user_name: web::Path<String>) -> impl Responder {
-    HttpResponse::Ok().body(format!("Deleted user: {}", user_name))
+#[derive(Debug, Deserialize, Serialize)]
+struct UpdateBalance {
+    id: i32,
+    balance: f64,
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    println!("Server running at http://localhost:8080/");
+    dotenv().ok();
+
+    // Set up the database connection
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let connection = PgConnection::establish(&database_url)
+        .expect(&format!("Error connecting to {}", database_url));
+
     HttpServer::new(|| {
         App::new()
-            .route("/", web::get().to(read_users))
-            .route("/users/", web::post().to(create_user))
-            .route("/users/", web::get().to(read_users))
-            .route("/users/{user_name}", web::get().to(read_user))
-            .route("/users/{user_name}", web::put().to(update_user))
-            .route("/users/{user_name}", web::delete().to(delete_user))
+            .route("/", web::get().to(get_data))
+            .route("/update-balance", web::post().to(update_balance))
     })
-    .bind("127.0.0.1:8080")?
+    .bind("0.0.0.0:3000")?
     .run()
     .await
+}
+
+async fn get_data() -> impl Responder {
+    let conn = establish_connection();
+    let data = my_table::table
+        .limit(10)
+        .load::<MyModel>(&conn)
+        .expect("Error loading data");
+    HttpResponse::Ok().json(data)
+}
+
+async fn update_balance(balance_info: web::Json<UpdateBalance>) -> impl Responder {
+    let conn = establish_connection();
+
+    diesel::update(my_table::table.find(balance_info.id))
+        .set(my_table::balance.eq(balance_info.balance))
+        .execute(&conn)
+        .expect("Error updating balance");
+
+    HttpResponse::Ok().json("Balance updated successfully")
+}
+
+fn establish_connection() -> PgConnection {
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    PgConnection::establish(&database_url).expect(&format!("Error connecting to {}", database_url))
 }
