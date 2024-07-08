@@ -16,6 +16,7 @@ struct MyModel {
 #[derive(Debug, Deserialize, Serialize, Insertable)]
 #[table_name = "my_table"]
 struct NewMyModel {
+    id: i32,
     country_code: String,
     balance: f64,
 }
