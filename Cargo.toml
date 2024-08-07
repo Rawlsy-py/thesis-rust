@@ -9,4 +9,4 @@ edition = "2021"
 actix-web = "4.0"
 serde = { version = "1.0", features = ["derive"] }
 dotenv = "0.15"
-diesel = { version = "2.1.6", features = ["postgres"] }
+postgres = "0.19.8"
