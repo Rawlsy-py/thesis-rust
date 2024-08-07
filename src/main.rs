@@ -1,65 +1,60 @@
-// main.rs
+use actix_web::{web, App, Error, HttpResponse, HttpServer};
+use confik::{Configuration as _, EnvSource};
+use deadpool_postgres::{Client, Pool};
+use dotenvy::dotenv;
+use tokio_postgres::NoTls;
 
-use actix_web::{web, App, HttpResponse, HttpServer, Responder};
-use diesel::{prelude::*, PgConnection};
-use dotenv::dotenv;
-use serde::{Deserialize, Serialize};
-use std::env;
+use crate::config::ExampleConfig;
 
-#[derive(Debug, Deserialize, Serialize, Queryable)]
-struct MyModel {
-    id: i32,
-    country_code: String,
-    balance: f64,
+mod config;
+mod db;
+mod errors;
+mod models;
+
+use self::{errors::MyError, models::User};
+
+pub async fn get_users(db_pool: web::Data<Pool>) -> Result<HttpResponse, Error> {
+    let client: Client = db_pool.get().await.map_err(MyError::PoolError)?;
+
+    let users = db::get_users(&client).await?;
+
+    Ok(HttpResponse::Ok().json(users))
 }
 
+pub async fn add_user(
+    user: web::Json<User>,
+    db_pool: web::Data<Pool>,
+) -> Result<HttpResponse, Error> {
+    let user_info: User = user.into_inner();
 
-#[derive(Debug, Deserialize, Serialize)]
-struct UpdateBalance {
-    id: i32,
-    balance: f64,
+    let client: Client = db_pool.get().await.map_err(MyError::PoolError)?;
+
+    let new_user = db::add_user(&client, user_info).await?;
+
+    Ok(HttpResponse::Ok().json(new_user))
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenv().ok();
 
-    // Set up the database connection
-    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let connection = PgConnection::establish(&database_url)
-        .expect(&format!("Error connecting to {}", database_url));
+    let config = ExampleConfig::builder()
+        .override_with(EnvSource::new())
+        .try_build()
+        .unwrap();
 
-    HttpServer::new(|| {
-        App::new()
-            .route("/", web::get().to(get_data))
-            .route("/update-balance", web::post().to(update_balance))
+    let pool = config.pg.create_pool(None, NoTls).unwrap();
+
+    let server = HttpServer::new(move || {
+        App::new().app_data(web::Data::new(pool.clone())).service(
+            web::resource("/users")
+                .route(web::post().to(add_user))
+                .route(web::get().to(get_users)),
+        )
     })
-    .bind("0.0.0.0:3000")?
-    .run()
-    .await
-}
+    .bind(config.server_addr.clone())?
+    .run();
+    println!("Server running at http://{}/", config.server_addr);
 
-async fn get_data() -> impl Responder {
-    let conn = establish_connection();
-    let data = my_table::table
-        .limit(10)
-        .load::<MyModel>(&conn)
-        .expect("Error loading data");
-    HttpResponse::Ok().json(data)
-}
-
-async fn update_balance(balance_info: web::Json<UpdateBalance>) -> impl Responder {
-    let conn = establish_connection();
-
-    diesel::update(my_table::table.find(balance_info.id))
-        .set(my_table::balance.eq(balance_info.balance))
-        .execute(&conn)
-        .expect("Error updating balance");
-
-    HttpResponse::Ok().json("Balance updated successfully")
-}
-
-fn establish_connection() -> PgConnection {
-    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    PgConnection::establish(&database_url).expect(&format!("Error connecting to {}", database_url))
+    server.await
 }
