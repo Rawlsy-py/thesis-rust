@@ -1,60 +1,32 @@
-use actix_web::{web, App, Error, HttpResponse, HttpServer};
-use confik::{Configuration as _, EnvSource};
-use deadpool_postgres::{Client, Pool};
-use dotenvy::dotenv;
-use tokio_postgres::NoTls;
+use actix_web::{web::Data, App, HttpServer};
+use dotenv::dotenv;
+use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 
-use crate::config::ExampleConfig;
+mod services;
+use services::{create_user_article, fetch_user_articles, fetch_users};
 
-mod config;
-mod db;
-mod errors;
-mod models;
-
-use self::{errors::MyError, models::User};
-
-pub async fn get_users(db_pool: web::Data<Pool>) -> Result<HttpResponse, Error> {
-    let client: Client = db_pool.get().await.map_err(MyError::PoolError)?;
-
-    let users = db::get_users(&client).await?;
-
-    Ok(HttpResponse::Ok().json(users))
-}
-
-pub async fn add_user(
-    user: web::Json<User>,
-    db_pool: web::Data<Pool>,
-) -> Result<HttpResponse, Error> {
-    let user_info: User = user.into_inner();
-
-    let client: Client = db_pool.get().await.map_err(MyError::PoolError)?;
-
-    let new_user = db::add_user(&client, user_info).await?;
-
-    Ok(HttpResponse::Ok().json(new_user))
+pub struct AppState {
+    db: Pool<Postgres>
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenv().ok();
+    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&database_url)
+        .await
+        .expect("Error building a connection pool");
 
-    let config = ExampleConfig::builder()
-        .override_with(EnvSource::new())
-        .try_build()
-        .unwrap();
-
-    let pool = config.pg.create_pool(None, NoTls).unwrap();
-
-    let server = HttpServer::new(move || {
-        App::new().app_data(web::Data::new(pool.clone())).service(
-            web::resource("/users")
-                .route(web::post().to(add_user))
-                .route(web::get().to(get_users)),
-        )
+    HttpServer::new(move || {
+        App::new()
+            .app_data(Data::new(AppState { db: pool.clone() }))
+            .service(fetch_users)
+            .service(fetch_user_articles)
+            .service(create_user_article)
     })
-    .bind(config.server_addr.clone())?
-    .run();
-    println!("Server running at http://{}/", config.server_addr);
-
-    server.await
+    .bind(("127.0.0.1", 8080))?
+    .run()
+    .await
 }
