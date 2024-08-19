@@ -4,7 +4,6 @@ use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 
 mod services;
 use services::fetch_users;
-// use services::{create_user_article, fetch_user_articles, fetch_users};
 
 pub struct AppState {
     db: Pool<Postgres>,
@@ -13,19 +12,20 @@ pub struct AppState {
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenv().ok();
-    let database_url = std::env::var("CONNECTION_STRING").expect("CONNECTION_STRING must be set");
+    let connection_string =
+        std::env::var("CONNECTION_STRING").expect("CONNECTION_STRING must be set");
     let pool = PgPoolOptions::new()
         .max_connections(5)
-        .connect(&database_url)
+        .connect(&connection_string)
         .await
         .expect("Error building a connection pool");
+
+    println!("Server running at http://127.0.0.1:8080/users");
 
     HttpServer::new(move || {
         App::new()
             .app_data(Data::new(AppState { db: pool.clone() }))
             .service(fetch_users)
-        // .service(fetch_user_articles)
-        // .service(create_user_article)
     })
     .bind(("127.0.0.1", 8080))?
     .run()
