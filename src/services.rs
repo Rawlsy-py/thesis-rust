@@ -11,6 +11,11 @@ struct Users {
     email: String,
 }
 
+#[get("/")]
+pub async fn index() -> impl Responder {
+    HttpResponse::Ok().json("Hello World!")
+}
+
 #[get("/users")]
 pub async fn fetch_users(state: Data<AppState>) -> impl Responder {
     match sqlx::query_as::<_, Users>("SELECT * FROM USERS;")
